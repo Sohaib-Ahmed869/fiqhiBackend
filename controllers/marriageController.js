@@ -1,13 +1,13 @@
 // controllers/marriageController.js
 const Marriage = require("../models/Marriage");
 const User = require("../models/User");
+const PDFDocument = require("pdfkit");
+const fs = require("fs-extra");
 const path = require("path");
-const fs = require("fs");
+const moment = require("moment");
+const { ArabicReshaper } = require("arabic-reshaper");
+const { bidi } = require("bidi-js");
 
-const { certificateUpload } = require("../config/s3");
-const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const { GetObjectCommand } = require("@aws-sdk/client-s3");
-const { s3Client } = require("../config/s3");
 // @desc    Get all marriages
 // @route   GET /api/marriages
 // @access  Protected (admin, shaykh)
@@ -339,8 +339,6 @@ exports.updateMeeting = async (req, res) => {
 //   }
 // };
 
-
-
 exports.uploadCertificate = async (req, res) => {
   try {
     // Debug logs
@@ -348,11 +346,11 @@ exports.uploadCertificate = async (req, res) => {
     console.log("req.file:", req.file);
     console.log("req.body:", req.body);
     console.log("Marriage ID:", req.params.id);
-    
+
     if (!req.params.id) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Marriage ID is required" 
+      return res.status(400).json({
+        success: false,
+        error: "Marriage ID is required",
       });
     }
 
@@ -363,9 +361,9 @@ exports.uploadCertificate = async (req, res) => {
         error: "No file uploaded or file upload failed",
       });
     }
-    
+
     const marriage = await Marriage.findById(req.params.id);
-    
+
     if (!marriage) {
       return res
         .status(404)
@@ -381,9 +379,10 @@ exports.uploadCertificate = async (req, res) => {
     }
 
     // Set file details
-    const fileUrl = req.file.location || 
+    const fileUrl =
+      req.file.location ||
       `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${req.file.key}`;
-    
+
     // Update marriage record with S3 file information
     marriage.certificateFile = req.file.key;
     marriage.certificateFileUrl = fileUrl;
@@ -392,7 +391,7 @@ exports.uploadCertificate = async (req, res) => {
     if (req.body.certificateNumber) {
       marriage.certificateNumber = req.body.certificateNumber;
     }
-    
+
     marriage.certificateIssuedDate = new Date();
     marriage.status = "completed";
 
@@ -401,9 +400,9 @@ exports.uploadCertificate = async (req, res) => {
       await marriage.save();
     } catch (saveError) {
       console.error("Error saving marriage record:", saveError);
-      return res.status(500).json({ 
-        success: false, 
-        error: "Error saving certificate information: " + saveError.message 
+      return res.status(500).json({
+        success: false,
+        error: "Error saving certificate information: " + saveError.message,
       });
     }
 
@@ -419,13 +418,14 @@ exports.uploadCertificate = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in uploadCertificate:", err);
-    res.status(500).json({ 
-      success: false, 
-      error: "Certificate upload failed: " + err.message 
+    res.status(500).json({
+      success: false,
+      error: "Certificate upload failed: " + err.message,
     });
   }
 };
 // Get certificate URL function remains mostly the same
+// Modify the existing getCertificateUrl function
 exports.getCertificateUrl = async (req, res) => {
   try {
     const marriage = await Marriage.findById(req.params.id);
@@ -449,31 +449,28 @@ exports.getCertificateUrl = async (req, res) => {
       });
     }
 
-    // Check if marriage has a certificate file
-    if (!marriage.certificateFile) {
+    // Check if marriage has a certificate generated
+    if (!marriage.certificate_generated) {
       return res
         .status(404)
-        .json({ success: false, error: "No certificate file found" });
+        .json({ success: false, error: "No certificate has been generated" });
     }
 
-    // Generate a signed URL (valid for 15 minutes)
-    const command = new GetObjectCommand({
-      Bucket: process.env.AWS_S3_BUCKET_NAME,
-      Key: marriage.certificateFile,
-    });
+    // Generate the PDF dynamically here
+    // This is where you would implement your Islamic certificate generation
+    // For now, let's just return a mock URL
 
-    try {
-      // Create presigned URL that expires in 15 minutes (900 seconds)
-      const signedUrl = await getSignedUrl(s3Client, command, {
-        expiresIn: 900,
-      });
-      res.status(200).json({ success: true, downloadUrl: signedUrl });
-    } catch (signedUrlError) {
-      console.error("Error generating signed URL:", signedUrlError);
-      return res
-        .status(500)
-        .json({ success: false, error: "Error generating download URL" });
+    // Update status to completed when downloaded
+    if (marriage.status !== "completed") {
+      marriage.status = "completed";
+      await marriage.save();
     }
+
+    // Mock URL for testing
+    const mockUrl = `/api/marriages/download-certificate/${marriage._id}`;
+    res.status(200).json({ success: true, downloadUrl: mockUrl });
+
+    // In a real implementation, you would generate a signed URL or serve a PDF
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, error: err.message });
@@ -625,6 +622,308 @@ exports.getShaykhAssignments = async (req, res) => {
     res.status(200).json({ success: true, count: marriages.length, marriages });
   } catch (err) {
     console.log(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// In your backend controller (marriageController.js)
+exports.generateCertificate = async (req, res) => {
+  try {
+    const marriage = await Marriage.findById(req.params.id);
+
+    if (!marriage) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Marriage record not found" });
+    }
+
+    // Only for certificate type
+    if (marriage.type !== "certificate") {
+      return res.status(400).json({
+        success: false,
+        error: "Certificates can only be generated for certificate requests",
+      });
+    }
+
+    // Update the certificate information
+    marriage.certificate_generated = true;
+    marriage.certificateNumber = req.body.certificateNumber;
+    marriage.certificateIssuedDate = new Date();
+
+    // Don't set to completed yet, until they download
+    if (marriage.status === "pending" || marriage.status === "assigned") {
+      marriage.status = "in-progress";
+    }
+
+    await marriage.save();
+
+    res.status(200).json({
+      success: true,
+      marriage,
+    });
+  } catch (err) {
+    console.error("Error marking certificate as generated:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+exports.downloadCertificate = async (req, res) => {
+  try {
+    const marriage = await Marriage.findById(req.params.id).populate(
+      "assignedShaykh",
+      "firstName lastName"
+    );
+
+    if (!marriage) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Marriage record not found" });
+    }
+
+    if (!marriage.certificate_generated) {
+      return res
+        .status(404)
+        .json({ success: false, error: "No certificate has been generated" });
+    }
+
+    // Create a PDF document
+    const doc = new PDFDocument({
+      size: [842, 595], // A4 Landscape
+      margin: 50,
+      info: {
+        Title: `Marriage Certificate - ${marriage.certificateNumber}`,
+        Author: "Islamic Marriage Service",
+        Subject: "Marriage Certificate",
+        Keywords: "marriage, certificate, islamic",
+      },
+    });
+
+    // Set the response headers
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=marriage-certificate-${marriage.certificateNumber}.pdf`
+    );
+
+    // Pipe the PDF to the response
+    doc.pipe(res);
+
+    // Load custom fonts (you'll need to have these files in your project)
+    const fontPath = path.join(__dirname, "../assets/fonts");
+    doc.registerFont(
+      "DecoFont",
+      path.join(fontPath, "Scheherazade-Regular.ttf")
+    );
+    doc.registerFont(
+      "EnglishFont",
+      path.join(fontPath, "Montserrat-Regular.ttf")
+    );
+    doc.registerFont("EnglishBold", path.join(fontPath, "Montserrat-Bold.ttf"));
+    doc.registerFont("Arabic", path.join(fontPath, "Amiri-Regular.ttf"));
+
+    // Background and border
+    doc
+      .rect(20, 20, doc.page.width - 40, doc.page.height - 40)
+      .lineWidth(2)
+      .fillOpacity(0.05)
+      .fillAndStroke("#f0f4f8", "#2c3e50");
+
+    // Add a decorative header
+    doc
+      .fontSize(28)
+      .font("EnglishBold")
+      .fillColor("#2c3e50")
+      .text("ISLAMIC MARRIAGE CERTIFICATE", {
+        align: "center",
+      });
+
+    // Add certificate number and date
+    doc.moveDown(0.5);
+    doc
+      .fontSize(12)
+      .font("EnglishFont")
+      .text(`Certificate No: ${marriage.certificateNumber}`, {
+        align: "center",
+      })
+      .text(
+        `Issued Date: ${moment(marriage.certificateIssuedDate).format(
+          "MMMM D, YYYY"
+        )}`,
+        {
+          align: "center",
+        }
+      );
+
+    // Add decorative divider
+    doc.moveDown(1);
+    doc
+      .lineWidth(1)
+      .moveTo(150, doc.y)
+      .lineTo(doc.page.width - 150, doc.y)
+      .stroke("#2c3e50");
+
+    // Add Bismillah in Arabic
+    doc.moveDown(1);
+    const bismillah = ArabicReshaper.reshape(
+      "بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيم"
+    );
+    const bidiText = bidi(bismillah);
+
+    doc
+      .fontSize(18)
+      .font("Arabic")
+      .text(bidiText, {
+        align: "center",
+        features: ["rtla"],
+      });
+
+    // Add certificate content
+    doc.moveDown(1);
+    doc.fontSize(12).font("EnglishFont").text("This is to certify that", {
+      align: "center",
+    });
+
+    // Partner names in bold
+    doc.moveDown(0.5);
+    doc
+      .fontSize(16)
+      .font("EnglishBold")
+      .text(
+        `${marriage.partnerOne.firstName} ${marriage.partnerOne.lastName}`,
+        {
+          align: "center",
+        }
+      )
+      .text("and", {
+        align: "center",
+      })
+      .text(
+        `${marriage.partnerTwo.firstName} ${marriage.partnerTwo.lastName}`,
+        {
+          align: "center",
+        }
+      );
+
+    // Continue with more details
+    doc.moveDown(1);
+    doc
+      .fontSize(12)
+      .font("EnglishFont")
+      .text("have been lawfully married according to Islamic Law (Shariah)", {
+        align: "center",
+      })
+      .text(`on ${moment(marriage.marriageDate).format("MMMM D, YYYY")}`, {
+        align: "center",
+      })
+      .text(`at ${marriage.marriagePlace}`, {
+        align: "center",
+      });
+
+    // Add witnesses section
+    doc.moveDown(2);
+    doc.fontSize(14).font("EnglishBold").text("WITNESSES", {
+      align: "center",
+    });
+
+    // List witnesses
+    doc.moveDown(0.5);
+    doc.fontSize(12).font("EnglishFont");
+
+    if (marriage.witnesses && marriage.witnesses.length > 0) {
+      marriage.witnesses.forEach((witness, index) => {
+        doc.text(
+          `${index + 1}. ${witness.name}${
+            witness.contact ? ` (${witness.contact})` : ""
+          }`,
+          {
+            align: "center",
+          }
+        );
+      });
+    } else {
+      doc.text("No witnesses recorded", {
+        align: "center",
+      });
+    }
+
+    // Add officiant (Shaykh) section
+    doc.moveDown(2);
+    doc.fontSize(14).font("EnglishBold").text("OFFICIATED BY", {
+      align: "center",
+    });
+
+    doc.moveDown(0.5);
+    doc
+      .fontSize(12)
+      .font("EnglishFont")
+      .text(
+        `${marriage.assignedShaykh.firstName} ${marriage.assignedShaykh.lastName}`,
+        {
+          align: "center",
+        }
+      );
+
+    // Add signature lines
+    doc.moveDown(3);
+
+    // Draw signature lines
+    const signatureY = doc.y;
+    const leftX = 150;
+    const rightX = doc.page.width - 150;
+
+    // Shaykh signature
+    doc
+      .lineWidth(0.5)
+      .moveTo(leftX, signatureY)
+      .lineTo(leftX + 150, signatureY)
+      .stroke();
+
+    doc.text("Shaykh Signature", leftX, signatureY + 5, {
+      width: 150,
+      align: "center",
+    });
+
+    // Bride/groom signatures
+    doc
+      .lineWidth(0.5)
+      .moveTo(rightX - 150, signatureY)
+      .lineTo(rightX, signatureY)
+      .stroke();
+
+    doc.text("Official Seal", rightX - 150, signatureY + 5, {
+      width: 150,
+      align: "center",
+    });
+
+    // Add footer with decorative line
+    const footerY = doc.page.height - 70;
+    doc
+      .lineWidth(1)
+      .moveTo(150, footerY)
+      .lineTo(doc.page.width - 150, footerY)
+      .stroke("#2c3e50");
+
+    doc
+      .fontSize(10)
+      .font("EnglishFont")
+      .text(
+        "This certificate is an official document recognized by our Islamic institution.",
+        {
+          align: "center",
+          y: footerY + 10,
+        }
+      )
+      .text(
+        "May Allah bless this union and grant the couple happiness and prosperity.",
+        {
+          align: "center",
+        }
+      );
+
+    // Finalize the PDF
+    doc.end();
+  } catch (err) {
+    console.error("Error generating certificate PDF:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 };

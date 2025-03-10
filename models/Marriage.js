@@ -157,6 +157,10 @@ const MarriageSchema = new mongoose.Schema(
         return this.type === "certificate";
       },
     },
+    certificate_generated: {
+      type: Boolean,
+      default: false,
+    },
     witnesses: [
       {
         name: String,

@@ -17,6 +17,8 @@ const {
   getUserMarriages,
   getShaykhAssignments,
   getCertificateUrl,
+  generateCertificate,
+  downloadCertificate,
 } = require("../controllers/marriageController");
 const { certificateUpload } = require("../config/s3");
 
@@ -62,7 +64,6 @@ router.put(
   uploadCertificate
 );
 
-
 // Complete marriage
 router.put("/complete/:id", protect, completeMarriage);
 
@@ -71,5 +72,16 @@ router.post("/feedback/:id", protect, addFeedback);
 
 // Cancel marriage
 router.put("/cancel/:id", protect, cancelMarriage);
+
+// Replace the upload-certificate route with generate-certificate
+router.post(
+  "/generate-certificate/:id",
+  protect,
+  authorize("admin", "shaykh"),
+  generateCertificate
+);
+
+// Add download route
+router.get("/download-certificate/:id", protect, downloadCertificate);
 
 module.exports = router;
