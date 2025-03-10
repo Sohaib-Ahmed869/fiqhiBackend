@@ -279,15 +279,93 @@ exports.updateMeeting = async (req, res) => {
 };
 
 // Modified upload certificate function using multer
+// exports.uploadCertificate = async (req, res) => {
+//   try {
+//     // Debug logs to see what we're getting
+//     console.log("File upload request received");
+//     console.log("req.file:", req.file);
+//     console.log("req.body:", req.body);
+
+//     const marriage = await Marriage.findById(req.params.id);
+
+//     if (!marriage) {
+//       return res
+//         .status(404)
+//         .json({ success: false, error: "Marriage record not found" });
+//     }
+
+//     // Only for certificate type
+//     if (marriage.type !== "certificate") {
+//       return res.status(400).json({
+//         success: false,
+//         error: "File can only be uploaded for certificate requests",
+//       });
+//     }
+
+//     // Check if file was uploaded successfully
+//     if (!req.file) {
+//       return res.status(400).json({
+//         success: false,
+//         error: "No file uploaded or file upload failed",
+//       });
+//     }
+
+//     // Update marriage record with S3 file information
+//     marriage.certificateFile = req.file.key;
+//     marriage.certificateFileUrl =
+//       req.file.location ||
+//       `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${req.file.key}`;
+
+//     // Get certificate number from body
+//     marriage.certificateNumber = req.body.certificateNumber;
+//     marriage.certificateIssuedDate = new Date();
+//     marriage.status = "completed";
+
+//     await marriage.save();
+
+//     res.status(200).json({
+//       success: true,
+//       marriage,
+//       fileInfo: {
+//         key: req.file.key,
+//         location: req.file.location,
+//         mimetype: req.file.mimetype,
+//         size: req.file.size,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("Error in uploadCertificate:", err);
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// };
+
+
+
 exports.uploadCertificate = async (req, res) => {
   try {
-    // Debug logs to see what we're getting
+    // Debug logs
     console.log("File upload request received");
     console.log("req.file:", req.file);
     console.log("req.body:", req.body);
+    console.log("Marriage ID:", req.params.id);
+    
+    if (!req.params.id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Marriage ID is required" 
+      });
+    }
 
+    // Check if file was uploaded successfully first
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded or file upload failed",
+      });
+    }
+    
     const marriage = await Marriage.findById(req.params.id);
-
+    
     if (!marriage) {
       return res
         .status(404)
@@ -302,40 +380,49 @@ exports.uploadCertificate = async (req, res) => {
       });
     }
 
-    // Check if file was uploaded successfully
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: "No file uploaded or file upload failed",
-      });
-    }
-
+    // Set file details
+    const fileUrl = req.file.location || 
+      `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${req.file.key}`;
+    
     // Update marriage record with S3 file information
     marriage.certificateFile = req.file.key;
-    marriage.certificateFileUrl =
-      req.file.location ||
-      `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${req.file.key}`;
+    marriage.certificateFileUrl = fileUrl;
 
     // Get certificate number from body
-    marriage.certificateNumber = req.body.certificateNumber;
+    if (req.body.certificateNumber) {
+      marriage.certificateNumber = req.body.certificateNumber;
+    }
+    
     marriage.certificateIssuedDate = new Date();
     marriage.status = "completed";
 
-    await marriage.save();
+    // Save with error handling
+    try {
+      await marriage.save();
+    } catch (saveError) {
+      console.error("Error saving marriage record:", saveError);
+      return res.status(500).json({ 
+        success: false, 
+        error: "Error saving certificate information: " + saveError.message 
+      });
+    }
 
     res.status(200).json({
       success: true,
       marriage,
       fileInfo: {
         key: req.file.key,
-        location: req.file.location,
+        location: fileUrl,
         mimetype: req.file.mimetype,
         size: req.file.size,
       },
     });
   } catch (err) {
     console.error("Error in uploadCertificate:", err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ 
+      success: false, 
+      error: "Certificate upload failed: " + err.message 
+    });
   }
 };
 // Get certificate URL function remains mostly the same

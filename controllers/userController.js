@@ -76,11 +76,11 @@ exports.updateUserProfile = async (req, res) => {
 
 // @desc    Change user password
 // @route   PUT /api/users/password
-// @access  Private
+// userController.js - Fixed changePassword function
 exports.changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-
+    
     // Validate input
     if (!currentPassword || !newPassword) {
       return res
@@ -90,29 +90,30 @@ exports.changePassword = async (req, res) => {
           error: "Please provide current and new passwords",
         });
     }
-
-    const user = await User.findById(req.user.id);
-
+    
+    // Find user with password
+    const user = await User.findById(req.user.id).select('+password');
+    
     if (!user) {
       return res.status(404).json({ success: false, error: "User not found" });
     }
-
-    // Check if current password matches
+    
+    // Verify current password
     const isMatch = await bcrypt.compare(currentPassword, user.password);
-
+    
     if (!isMatch) {
       return res
         .status(400)
         .json({ success: false, error: "Current password is incorrect" });
     }
-
-    // Hash new password
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
-    user.passwordChangedAt = Date.now();
-
+    
+    // IMPORTANT: Let the mongoose pre-save hook handle the password hashing
+    // Instead of manually hashing it here
+    user.password = newPassword;
+    
+    // Save the user - this will trigger the pre-save hook to hash the password
     await user.save();
-
+    
     res.status(200).json({
       success: true,
       message: "Password updated successfully",
@@ -122,7 +123,6 @@ exports.changePassword = async (req, res) => {
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
-
 // @desc    Update user settings
 // @route   PUT /api/users/settings
 // @access  Private

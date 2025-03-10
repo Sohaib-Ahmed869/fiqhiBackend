@@ -20,7 +20,6 @@ router.get("/user", protect, getUserFatwas);
 router.get("/assigned", protect, authorize("shaykh"), getAssignedFatwas);
 router.get("/:id", getFatwa);
 
-// Protected routes - require authentication
 router.post("/", protect, authorize("user", "admin"), createFatwa);
 
 // Admin and Shaykh routes
