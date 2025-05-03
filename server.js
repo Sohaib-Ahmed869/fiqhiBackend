@@ -20,7 +20,7 @@ app.use(express.json());
 // Enable CORS
 app.use(
   cors({
-    origin: "*",
+    origin: "https://fiqhi-fe.vercel.app",
     credentials: true,
   })
 );
