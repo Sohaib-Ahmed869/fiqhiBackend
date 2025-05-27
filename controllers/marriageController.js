@@ -89,9 +89,11 @@ exports.createReservation = async (req, res) => {
       preferredTime,
       preferredLocation,
       additionalInformation,
+      selectedShaykh,
+      registerAsAustralian,
     } = req.body;
 
-    const reservation = await Marriage.create({
+    let reservationData = {
       type: "reservation",
       user: req.user.id,
       partnerOne,
@@ -100,7 +102,16 @@ exports.createReservation = async (req, res) => {
       preferredTime,
       preferredLocation,
       additionalInformation,
-    });
+      registerAsAustralian: registerAsAustralian || "no",
+    };
+
+    // If a specific shaykh was selected, assign them
+    if (selectedShaykh) {
+      reservationData.assignedShaykh = selectedShaykh;
+      reservationData.status = "assigned";
+    }
+
+    const reservation = await Marriage.create(reservationData);
 
     res.status(201).json({ success: true, reservation });
   } catch (err) {

@@ -107,29 +107,30 @@ exports.assignFatwa = async (req, res) => {
       });
     }
 
-    // Admin can assign to any shaykh, shaykh can only assign to self
-    const shaykhId = req.body.shaykhId || req.user.id;
+    const shaykhId = req.body.shaykhId;
 
-    // If admin is assigning to a shaykh, verify the shaykh exists and has the shaykh role
-    if (req.user.role === "admin" && req.body.shaykhId) {
-      const shaykh = await User.findById(req.body.shaykhId);
-
+    console.log("Assigning fatwa:", fatwa._id, "to shaykh:", shaykhId);
+    // If shaykhId is provided, assign to that shaykh
+    if (shaykhId !== "Unassigned") {
+      // If admin is assigning to a shaykh, verify the shaykh exists
+      const shaykh = await User.findById(shaykhId);
       if (!shaykh || shaykh.role !== "shaykh") {
         return res.status(400).json({
           success: false,
           error: "Invalid shaykh assignment",
         });
       }
-    }
 
-    // Update fatwa
-    fatwa.status = "assigned";
-    fatwa.assignedTo = shaykhId;
-    fatwa.assignedAt = Date.now();
+      fatwa.status = "assigned";
+      fatwa.assignedTo = shaykhId;
+    } else {
+      // If no shaykhId provided, unassign (set to pending)
+      fatwa.status = "pending";
+      fatwa.assignedTo = null;
+    }
 
     await fatwa.save();
 
-    // Return populated fatwa
     const updatedFatwa = await Fatwa.findById(fatwa._id).populate({
       path: "assignedTo",
       select: "username email name role",
@@ -141,6 +142,33 @@ exports.assignFatwa = async (req, res) => {
   }
 };
 
+exports.unassignFatwa = async (req, res) => {
+  try {
+    const fatwa = await Fatwa.findById(req.params.id);
+
+    if (!fatwa) {
+      return res.status(404).json({ success: false, error: "Fatwa not found" });
+    }
+
+    // Only admin can unassign
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        error: "Not authorized to unassign fatwas",
+      });
+    }
+
+    fatwa.status = "pending";
+    fatwa.assignedTo = null;
+    fatwa.assignedAt = null;
+
+    await fatwa.save();
+
+    res.status(200).json({ success: true, fatwa });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
 // @desc    Answer a fatwa
 // @route   PUT /fatwas/:id/answer
 // @access  Protected (shaykh)
@@ -152,15 +180,24 @@ exports.answerFatwa = async (req, res) => {
       return res.status(404).json({ success: false, error: "Fatwa not found" });
     }
 
-    // Check if the fatwa is assigned to this shaykh or if user is admin
-    if (
-      req.user.role !== "admin" &&
-      (fatwa.assignedTo.toString() !== req.user.id ||
-        fatwa.status !== "assigned")
-    ) {
+    // Admin can answer any fatwa, shaykh can only answer assigned ones
+    if (req.user.role === "admin") {
+      // Admin can answer any fatwa
+    } else if (req.user.role === "shaykh") {
+      // Check if the fatwa is assigned to this shaykh
+      if (
+        fatwa.assignedTo.toString() !== req.user.id ||
+        fatwa.status !== "assigned"
+      ) {
+        return res.status(403).json({
+          success: false,
+          error: "Not authorized to answer this fatwa",
+        });
+      }
+    } else {
       return res.status(403).json({
         success: false,
-        error: "Not authorized to answer this fatwa",
+        error: "Not authorized to answer fatwas",
       });
     }
 
@@ -172,7 +209,6 @@ exports.answerFatwa = async (req, res) => {
 
     await fatwa.save();
 
-    // Return populated fatwa
     const updatedFatwa = await Fatwa.findById(fatwa._id).populate({
       path: "answeredBy",
       select: "username email name role",
@@ -183,7 +219,6 @@ exports.answerFatwa = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
-
 // @desc    Approve a fatwa (admin review of answered fatwa)
 // @route   PUT /fatwas/:id/approve
 // @access  Protected (admin)

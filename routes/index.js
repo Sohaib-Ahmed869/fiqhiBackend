@@ -9,8 +9,14 @@ const marriageRoutes = require("./marriage");
 const reconciliationRoutes = require("./recon");
 const userRoutes = require("./user");
 const adminDashboardRoutes = require("../controllers/adminDashboard");
+const {
+  verifyRegistrationToken,
+  registerShaykhWithToken,
+} = require("../controllers/publicController");
 
 // Mount routes
+router.get('/api/verify-token/:token', verifyRegistrationToken);
+router.post('/api/register-shaykh/:token', registerShaykhWithToken);
 router.use("/api/fatwas", fatwaRoutes);
 router.use("/api/auth", authRoutes);
 router.use("/api/admin/shaykhs", adminShaykhRoutes);

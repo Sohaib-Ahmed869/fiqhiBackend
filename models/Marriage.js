@@ -220,6 +220,15 @@ const MarriageSchema = new mongoose.Schema(
       enum: ["low", "medium", "high"],
       default: "medium",
     },
+    selectedShaykh: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    registerAsAustralian: {
+      type: String,
+      enum: ["yes", "no"],
+      default: "no",
+    },
   },
   {
     timestamps: true,

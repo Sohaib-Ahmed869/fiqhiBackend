@@ -39,10 +39,12 @@ const ReconciliationSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    assignedShaykh: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
+    assignedShaykhs: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     status: {
       type: String,
       enum: [

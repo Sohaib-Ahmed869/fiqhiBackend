@@ -42,9 +42,10 @@ const UserSchema = new mongoose.Schema(
     firstName: { type: String, trim: true },
     lastName: { type: String, trim: true },
     yearsOfExperience: { type: Number },
-    educationalInstitution: { type: String },
     phoneNumber: { type: String },
     address: { type: String },
+    about: { type: String, trim: true },
+    whereWork: { type: String, trim: true },
   },
   {
     timestamps: true,

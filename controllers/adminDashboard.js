@@ -304,8 +304,7 @@ router.get("/dashboard", protect, authorize("admin"), async (req, res) => {
         name: month,
         MarriageQueries: marriageQueries,
         Nikahs: nikahs,
-        FamilyCounseling:
-          familyCounseling,
+        FamilyCounseling: familyCounseling,
       };
     });
 
@@ -319,8 +318,8 @@ router.get("/dashboard", protect, authorize("admin"), async (req, res) => {
 
       const assignedReconciliations = reconciliations.filter(
         (r) =>
-          r.assignedShaykh &&
-          r.assignedShaykh.toString() === shaykh._id.toString()
+          r.assignedShaykhs && // Changed from assignedShaykh
+          r.assignedShaykhs.includes(shaykh._id.toString()) // Changed to array check
       ).length;
 
       const assignedFatwas = fatwas.filter(

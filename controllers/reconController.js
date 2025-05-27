@@ -9,14 +9,13 @@ exports.getReconciliations = async (req, res) => {
   try {
     let query = {};
 
-    // Apply filters if provided
     if (req.query.status) {
       query.status = req.query.status;
     }
 
     // If shaykh, only show their assigned cases
     if (req.user.role === "shaykh") {
-      query.assignedShaykh = req.user.id;
+      query.assignedShaykhs = req.user.id; // Changed from assignedShaykh
     }
 
     const reconciliations = await Reconciliation.find(query)
@@ -25,7 +24,7 @@ exports.getReconciliations = async (req, res) => {
         select: "username email",
       })
       .populate({
-        path: "assignedShaykh",
+        path: "assignedShaykhs", // Changed from assignedShaykh
         select: "username email firstName lastName",
       })
       .sort({ createdAt: -1 });
@@ -51,7 +50,7 @@ exports.getReconciliation = async (req, res) => {
         select: "username email",
       })
       .populate({
-        path: "assignedShaykh",
+        path: "assignedShaykhs", // Changed from assignedShaykh
         select: "username email firstName lastName",
       })
       .populate({
@@ -105,7 +104,6 @@ exports.assignReconciliation = async (req, res) => {
         .json({ success: false, error: "Reconciliation case not found" });
     }
 
-    // Only admin can assign
     if (req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
@@ -113,32 +111,44 @@ exports.assignReconciliation = async (req, res) => {
       });
     }
 
-    // Validate shaykh exists
-    const { shaykhId } = req.body;
-    if (!shaykhId) {
+    // Support both single and multiple shaykh assignment
+    const { shaykhId, shaykhIds } = req.body;
+    let shaykhsToAssign = [];
+
+    if (shaykhId) {
+      shaykhsToAssign = [shaykhId];
+    } else if (shaykhIds && Array.isArray(shaykhIds)) {
+      shaykhsToAssign = shaykhIds;
+    } else {
       return res
         .status(400)
-        .json({ success: false, error: "Please provide a shaykh ID" });
+        .json({ success: false, error: "Please provide shaykh ID(s)" });
     }
 
-    const shaykh = await User.findById(shaykhId);
-    if (!shaykh || shaykh.role !== "shaykh") {
+    // Validate all shaykhs exist
+    const shaykhs = await User.find({
+      _id: { $in: shaykhsToAssign },
+      role: "shaykh",
+    });
+
+    if (shaykhs.length !== shaykhsToAssign.length) {
       return res
         .status(400)
-        .json({ success: false, error: "Invalid shaykh ID" });
+        .json({ success: false, error: "One or more invalid shaykh IDs" });
     }
 
-    // Update reconciliation
-    reconciliation.assignedShaykh = shaykhId;
+    // Update reconciliation - add new shaykhs without removing existing ones
+    reconciliation.assignedShaykhs = [
+      ...new Set([...reconciliation.assignedShaykhs, ...shaykhsToAssign]),
+    ];
     reconciliation.status = "assigned";
 
     await reconciliation.save();
 
-    // Return populated reconciliation
     const updatedReconciliation = await Reconciliation.findById(
       reconciliation._id
     ).populate({
-      path: "assignedShaykh",
+      path: "assignedShaykhs",
       select: "username email firstName lastName",
     });
 
@@ -163,6 +173,17 @@ exports.addMeeting = async (req, res) => {
         .json({ success: false, error: "Reconciliation case not found" });
     }
 
+    // Only admin or assigned shaykhs can add meetings
+    if (
+      req.user.role !== "admin" &&
+      (!reconciliation.assignedShaykhs ||
+        !reconciliation.assignedShaykhs.includes(req.user.id))
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: "Not authorized to add meetings for this case",
+      });
+    }
 
     const { date, time, location, notes } = req.body;
 
@@ -174,7 +195,6 @@ exports.addMeeting = async (req, res) => {
       status: "scheduled",
     });
 
-    // Update status if this is the first meeting and status is assigned or pending
     if (
       reconciliation.status === "assigned" ||
       reconciliation.status === "pending"
@@ -189,7 +209,6 @@ exports.addMeeting = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
-
 // @desc    Update meeting status
 // @route   PUT /api/reconciliations/:id/meetings/:meetingId
 // @access  Protected (admin, assigned shaykh)
@@ -203,11 +222,11 @@ exports.updateMeeting = async (req, res) => {
         .json({ success: false, error: "Reconciliation case not found" });
     }
 
-    // Only admin or assigned shaykh can update meetings
+    // Only admin or assigned shaykhs can update meetings
     if (
       req.user.role !== "admin" &&
-      (!reconciliation.assignedShaykh ||
-        reconciliation.assignedShaykh.toString() !== req.user.id)
+      (!reconciliation.assignedShaykhs ||
+        !reconciliation.assignedShaykhs.includes(req.user.id))
     ) {
       return res.status(403).json({
         success: false,
@@ -215,7 +234,6 @@ exports.updateMeeting = async (req, res) => {
       });
     }
 
-    // Find the meeting
     const meeting = reconciliation.meetings.id(req.params.meetingId);
     if (!meeting) {
       return res
@@ -225,7 +243,6 @@ exports.updateMeeting = async (req, res) => {
 
     const { status, completedNotes, date, time, location, notes } = req.body;
 
-    // Update meeting fields
     if (status) meeting.status = status;
     if (completedNotes) meeting.completedNotes = completedNotes;
     if (date) meeting.date = date;
@@ -254,11 +271,11 @@ exports.addShaykhNotes = async (req, res) => {
         .json({ success: false, error: "Reconciliation case not found" });
     }
 
-    // Only admin or assigned shaykh can add notes
+    // Only admin or assigned shaykhs can add notes
     if (
       req.user.role !== "admin" &&
-      (!reconciliation.assignedShaykh ||
-        reconciliation.assignedShaykh.toString() !== req.user.id)
+      (!reconciliation.assignedShaykhs ||
+        !reconciliation.assignedShaykhs.includes(req.user.id))
     ) {
       return res.status(403).json({
         success: false,
@@ -286,6 +303,7 @@ exports.addShaykhNotes = async (req, res) => {
 // @desc    Complete reconciliation with outcome
 // @route   PUT /api/reconciliations/:id/complete
 // @access  Protected (admin, assigned shaykh)
+// Update completeReconciliation function:
 exports.completeReconciliation = async (req, res) => {
   try {
     const reconciliation = await Reconciliation.findById(req.params.id);
@@ -296,11 +314,11 @@ exports.completeReconciliation = async (req, res) => {
         .json({ success: false, error: "Reconciliation case not found" });
     }
 
-    // Only admin or assigned shaykh can complete
+    // Only admin or assigned shaykhs can complete
     if (
       req.user.role !== "admin" &&
-      (!reconciliation.assignedShaykh ||
-        reconciliation.assignedShaykh.toString() !== req.user.id)
+      (!reconciliation.assignedShaykhs ||
+        !reconciliation.assignedShaykhs.includes(req.user.id))
     ) {
       return res.status(403).json({
         success: false,
@@ -311,17 +329,14 @@ exports.completeReconciliation = async (req, res) => {
     const { outcome, outcomeDetails } = req.body;
 
     if (!outcome || (outcome !== "resolved" && outcome !== "unresolved")) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: "Valid outcome (resolved/unresolved) is required",
-        });
+      return res.status(400).json({
+        success: false,
+        error: "Valid outcome (resolved/unresolved) is required",
+      });
     }
 
-    // Update reconciliation
     reconciliation.outcome = outcome;
-    reconciliation.status = outcome; // Set status based on outcome
+    reconciliation.status = outcome;
 
     if (outcomeDetails) {
       reconciliation.outcomeDetails = outcomeDetails;
@@ -334,7 +349,6 @@ exports.completeReconciliation = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
-
 // @desc    Add feedback to reconciliation
 // @route   POST /api/reconciliations/:id/feedback
 // @access  Protected
@@ -408,12 +422,10 @@ exports.cancelReconciliation = async (req, res) => {
       reconciliation.status === "resolved" ||
       reconciliation.status === "unresolved"
     ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: "Cannot cancel a completed reconciliation case",
-        });
+      return res.status(400).json({
+        success: false,
+        error: "Cannot cancel a completed reconciliation case",
+      });
     }
 
     reconciliation.status = "cancelled";
@@ -436,7 +448,7 @@ exports.getUserReconciliations = async (req, res) => {
   try {
     const reconciliations = await Reconciliation.find({ user: req.user.id })
       .populate({
-        path: "assignedShaykh",
+        path: "assignedShaykhs",
         select: "username email firstName lastName",
       })
       .sort({ createdAt: -1 });
@@ -452,9 +464,9 @@ exports.getUserReconciliations = async (req, res) => {
 // @desc    Get shaykh assigned reconciliations
 // @route   GET /api/reconciliations/my-assignments
 // @access  Protected (shaykh)
+// Update getShaykhAssignments function:
 exports.getShaykhAssignments = async (req, res) => {
   try {
-    // Only shaykh can access this route
     if (req.user.role !== "shaykh") {
       return res.status(403).json({
         success: false,
@@ -463,12 +475,16 @@ exports.getShaykhAssignments = async (req, res) => {
     }
 
     const reconciliations = await Reconciliation.find({
-      assignedShaykh: req.user.id,
+      assignedShaykhs: req.user.id, // Changed from assignedShaykh
       status: { $in: ["assigned", "in-progress", "resolved", "unresolved"] },
     })
       .populate({
         path: "user",
         select: "username email",
+      })
+      .populate({
+        path: "assignedShaykhs",
+        select: "username email firstName lastName",
       })
       .sort({ createdAt: -1 });
 
