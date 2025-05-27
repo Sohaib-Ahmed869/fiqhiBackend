@@ -7,7 +7,7 @@ const routes = require("./routes/index");
 const fileUpload = require("express-fileupload");
 const { S3Client, ListBucketsCommand } = require("@aws-sdk/client-s3");
 // Load env vars
-require('dotenv').config();
+require("dotenv").config();
 
 // Connect to database
 connectDB();
@@ -20,7 +20,7 @@ app.use(express.json());
 // Enable CORS
 app.use(
   cors({
-    origin: "https://fiqhi-fe.vercel.app",
+    origin: ["https://fiqhi-fe.vercel.app", "http://localhost:5173"],
     credentials: true,
   })
 );
@@ -46,30 +46,30 @@ app.use(routes);
 // Error handler middleware
 app.use(errorHandler);
 
-app.get('/test-s3', async (req, res) => {
+app.get("/test-s3", async (req, res) => {
   try {
     // Create a new client for testing
     const testClient = new S3Client({
       region: process.env.AWS_REGION,
       credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-      }
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
     });
-    
+
     // Try to list buckets (requires minimal permissions)
     const command = new ListBucketsCommand({});
     const response = await testClient.send(command);
-    
+
     res.json({
-      success: true, 
-      buckets: response.Buckets?.map(b => b.Name) || []
+      success: true,
+      buckets: response.Buckets?.map((b) => b.Name) || [],
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
     });
   }
 });

@@ -25,7 +25,7 @@ router.get("/dashboard", protect, authorize("admin"), async (req, res) => {
         "firstName lastName email"
       ),
       Reconciliation.find().populate(
-        "user assignedShaykh",
+        "user assignedShaykhs",
         "firstName lastName email"
       ),
       User.find({ role: "shaykh" }).select("-password"),
